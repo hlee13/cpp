@@ -1,6 +1,6 @@
 /*
 *  File    : logger.cpp
-*  Author  : lihan
+*  Author  : 
 *  Version : 1.0
 *  Company : 
 *  Contact : 

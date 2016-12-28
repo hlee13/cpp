@@ -1,6 +1,6 @@
 /*
 *  File    : rd_rtree.hpp
-*  Author  : lihan
+*  Author  : 
 *  Version : 1.0
 *  Company : 
 *  Contact : 

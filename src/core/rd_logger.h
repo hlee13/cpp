@@ -1,6 +1,6 @@
 /*
 *  File    : logger.h
-*  Author  : lihan
+*  Author  : 
 *  Version : 1.0
 *  Company : 
 *  Contact : 

@@ -72,15 +72,15 @@ include_directories(
     ${GMOCK_MODULE_INCLUDE}
     )
 
-add_executable(dev_lib-service ${SERVICE_SOURCES})
-
-target_link_libraries(dev_lib-service
-    ${LOG4CPLUS_MODULE_LIB}
-    ${BOOST_MODULE_LIB}
-    ${THRIFT_MODULE_LIB}
-    ${GTEST_MODULE_LIB}
-    ${GMOCK_MODULE_LIB}
-    pthread)
+#add_executable(dev_lib-service ${SERVICE_SOURCES})
+#
+#target_link_libraries(dev_lib-service
+#    ${LOG4CPLUS_MODULE_LIB}
+#    ${BOOST_MODULE_LIB}
+#    ${THRIFT_MODULE_LIB}
+#    ${GTEST_MODULE_LIB}
+#    ${GMOCK_MODULE_LIB}
+#    pthread)
 
 add_library(rd_dev ${CORE_SOURCES})
 
@@ -89,4 +89,4 @@ install(TARGETS rd_dev DESTINATION ${PROJECT_DIR}/../lib/)
 
 install(FILES ${CORE_HEADERS} DESTINATION ${PROJECT_DIR}/output/include/) 
 install(TARGETS rd_dev DESTINATION ${PROJECT_DIR}/output/lib/) 
-install(TARGETS dev_lib-service DESTINATION ${PROJECT_DIR}/output/bin/) 
+#install(TARGETS dev_lib-service DESTINATION ${PROJECT_DIR}/output/bin/) 

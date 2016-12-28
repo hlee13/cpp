@@ -1,6 +1,6 @@
 /*
 *  File    : logger.h
-*  Author  : lihan
+*  Author  : 
 *  Version : 1.0
 *  Company : 
 *  Contact : 
@@ -10,12 +10,14 @@
 #ifndef _KDTREE_H_
 #define _KDTREE_H_
 
+#include <string>
 #include <vector>
 #include <math.h>
 #include "rd_array.hpp"
 #include "rd_vector.hpp"
 #include "rd_quicksort.hpp"
 #include "rd_heaptable.hpp"
+#include "rd_io.h"
 
 #include "rd_timer.h"
 
@@ -25,8 +27,7 @@ enum DIRECTION_T {
     LEFT, RIGHT, BOTH
 };
 
-// KDTree Node, 跟mbr同维度
-template <typename _Tp, typename IDX_T, int dimension, bool v0 = true, bool v1 = true>
+template <typename _Tp, typename IDX_T, int dimension>
 struct KDTree {
     typedef HeapTable<IDX_T, _Tp, IDX_T, MAX_ROOT_HEAP> MAX_Heap_Table;
     typedef HeapTable<IDX_T, _Tp, IDX_T, MIN_ROOT_HEAP> MIN_Heap_Table;
@@ -67,19 +68,21 @@ struct KDTree {
         std::vector<TraceNode> route;
         _Tp cost;
     };
-public:
-    static const IDX_T mbr_dimension = dimension * 2;
 
-    struct NODE_T : public rd::Vector<_Tp, mbr_dimension> {
+    static const IDX_T mbr_dimension = dimension << 1;
+    static const IDX_T aux_dimension = dimension >> 1;
+public:
+    struct NODE_T : public rd::Vector<_Tp, dimension> {
+        NODE_T() {}
         NODE_T(IDX_T id, ...) {
             va_list args;
 
             idx = id;
             va_start(args, id);
-            for (IDX_T i = 0; i < mbr_dimension; i++) {
+            for (IDX_T i = 0; i < dimension; i++) {
                 _Tp val = va_arg(args, _Tp);
 
-                rd::Vector<_Tp, mbr_dimension>::dim[i] = val;
+                rd::Vector<_Tp, dimension>::dim[i] = val;
             }
             va_end(args);
         }
@@ -87,19 +90,18 @@ public:
         IDX_T idx;
     };
 
-    typedef rd::Vector<_Tp, mbr_dimension> MBR_T;
+    typedef rd::Vector<_Tp, dimension * 2> MBR_T;
     typedef std::vector<NODE_T> LIST_NODE;
     typedef std::vector<IDX_T> LIST_IDX;
-    // typedef rd::Array<NODE_T, 20480> LIST_NODE;
-    // typedef rd::Array<IDX_T, 20480> LIST_IDX;
 public:
-    KDTree();
+    KDTree() {};
     KDTree(const KDTree&);
     KDTree& operator =(const KDTree&);
 
     KDTree(LIST_NODE& arr_item) {
         BuildKDTree(arr_item);
     }
+
     KDTree(LIST_NODE& arr_item, LIST_IDX& arr_idx) {
         BuildKDTree(arr_item, arr_idx);
     }
@@ -115,10 +117,36 @@ public:
     }
 
     void BuildKDTree(LIST_NODE& arr_item, LIST_IDX& arr_idx) {
-        arr_item_.swap(arr_item);
         arr_idx_.swap(arr_idx);
+        arr_item_.swap(arr_item);
 
         BuildKDTree(0, arr_item_.size(), 0);
+    }
+
+    bool load_bin_file(const std::string& file_name) {
+        LIST_IDX arr_idx;
+        LIST_NODE arr_item;
+
+        load_vec_bin_file(file_name + ".idx", arr_idx);
+        load_vec_bin_file(file_name + ".item", arr_item);
+
+        if (arr_idx.size() != arr_item.size()) {
+            return false;
+        }
+
+        arr_idx_.swap(arr_idx);
+        arr_item_.swap(arr_item);
+        return true;
+    }
+
+    bool dump_bin_file(const std::string& file_name) {
+        if (arr_idx_.size() != arr_item_.size()) {
+            return false;
+        }
+
+        dump_vec_bin_file(file_name + ".idx", arr_idx_);
+        dump_vec_bin_file(file_name + ".item", arr_item_);
+        return true;
     }
 
     NODE_T& operator [](IDX_T idx) {
@@ -127,114 +155,50 @@ public:
 protected:
     // Build k-dimension Tree
     void BuildKDTree(IDX_T start_idx, IDX_T end_idx, size_t depth = 0) {
-        depth = depth % mbr_dimension;
-        
-        if (end_idx - start_idx <= 1) {
-            return;
-        }
+        size_t axis = depth % dimension;
 
         IDX_T node_cnt = end_idx - start_idx;
         IDX_T mean_idx = node_cnt >> 1;
         mean_idx += start_idx;
-        rd::nth_quick_sort(arr_item_, arr_idx_, depth, start_idx, end_idx - 1, mean_idx);
+        rd::nth_quick_sort(arr_item_, arr_idx_, axis, start_idx, end_idx - 1, mean_idx);
 
-        depth++;
         if (start_idx < mean_idx) {
-            BuildKDTree(start_idx, mean_idx, depth);
+            BuildKDTree(start_idx, mean_idx, depth + 1);
         }
 
-        if (mean_idx < end_idx) {
-            BuildKDTree(mean_idx+1, end_idx, depth);
-        }
-    }
-
-    bool IsRectIntersect(MBR_T& r0, MBR_T& r1) {
-        if (v0) {
-            return IsRectIntersect_v0(r0, r1);
-        } else {
-            return IsRectIntersect_v1(r0, r1);
+        if (mean_idx+1 < end_idx) {
+            BuildKDTree(mean_idx+1, end_idx, depth + 1);
         }
     }
 
-    DIRECTION_T GetSearchDirection(MBR_T& cur_node, MBR_T& query_rect, size_t depth) {
-        if (v0) {
-            return GetSearchDirection_v0(cur_node, query_rect, depth);
-        } else {
-            return GetSearchDirection_v1(cur_node, query_rect, depth);
-        }
-    }
-
-    // arr_item.emplace_back(minLng, minLat, maxLng, maxLat);
-    bool IsRectIntersect_v0(MBR_T& r0, MBR_T& r1) {
+    bool PointInMbr(NODE_T& point, MBR_T& rect) {
         for (size_t i = 0; i < dimension; i++) {
             size_t min_idx = i;
-            size_t max_idx = dimension + i;
+            size_t max_idx = i + dimension;
 
-            if (r0[max_idx] < r1[min_idx] or r1[max_idx] < r0[min_idx]) {
+            if (point[i] < rect[min_idx] or point[i] > rect[max_idx]) {
                 return false;
             }
         }
         return true;
     }
 
-    DIRECTION_T GetSearchDirection_v0(MBR_T& cur_node, MBR_T& query_rect, size_t depth) {
-        _Tp cur_val = cur_node[depth];
-        _Tp dst_val = query_rect[depth];
+    // used by QUERY_MBR
+    // NODE_T(minLng, minLat, maxLng, maxLat); 
+    bool PointInMbr(NODE_T& point, NODE_T& mbr) {
+        for (size_t i = 0; i < aux_dimension; i++) {
+            size_t min_idx = i;
+            size_t max_idx = aux_dimension + i;
 
-        // byRect
-        if (v1) {
-            if (depth < dimension) {
-                if (cur_val < dst_val) {
-                    return RIGHT;
-                }
-            } else {
-                if (cur_val > dst_val) {
-                    return LEFT;
-                }
-            }
-        } else {
-        // ByPoint
-           if (depth < dimension) {
-               if (cur_val > dst_val) {
-                   return LEFT;
-               }
-           } else {
-               if (cur_val < dst_val) {
-                   return RIGHT;
-               }
-           }
-        }
-        return BOTH;
-    }
-
-    // arr_item.emplace_back(minLng, maxLng, minLat, maxLat);
-    bool IsRectIntersect_v1(MBR_T& r0, MBR_T& r1) {
-        for (size_t i = 0; i < dimension; i++) {
-            size_t min_idx = i * 2;
-            size_t max_idx = i * 2 + 1;
-
-            if (r0[max_idx] < r1[min_idx] or r1[max_idx] < r0[min_idx]) {
+            if (point[max_idx] < mbr[min_idx] or mbr[max_idx] < point[min_idx]) {
                 return false;
             }
         }
         return true;
     }
 
-    DIRECTION_T GetSearchDirection_v1(MBR_T& cur_node, MBR_T& query_rect, size_t depth) {
-        _Tp cur_val = cur_node[depth];
-        _Tp dst_val = query_rect[depth];
-
-        // ByPoint
-        bool sig = depth % 2;
-        if (sig) {
-            if (cur_val < dst_val) {
-                return RIGHT;
-            }
-        } else {
-            if (cur_val > dst_val) {
-                return LEFT;
-            }
-        }
+    // TODO:
+    DIRECTION_T GetSearchDirection(NODE_T& cur_node, MBR_T& point, size_t axis) {
         return BOTH;
     }
 public:
@@ -426,8 +390,12 @@ public:
     }
 
     // QueryInRectangle
-    void QueryInRectangle(MBR_T& rect, LIST_IDX& idx_lst) {
+    void QueryInRectangle(NODE_T& rect, LIST_IDX& idx_lst) {
         QueryInRectangle(rect, 0, 0, arr_item_.size(), idx_lst);
+    }
+
+    void QueryByRectangle(MBR_T& rect, LIST_IDX& idx_lst) {
+        QueryByRectangle(rect, 0, 0, arr_item_.size(), idx_lst);
     }
 protected:
     _Tp distance(NODE_T& n0, NODE_T& n1) {
@@ -522,6 +490,7 @@ protected:
         prj_node[prj_idx] = pivot_node[prj_idx];
         _Tp dist = distance(query_node, prj_node);
 
+        // TODO: GetSearchDirection
         DIRECTION_T direction = GetSearchDirection(pivot_node, rect, depth);
         if ((direction == BOTH or direction == LEFT) and mean_idx > start_idx) {
             // trace_route.emplace_back(depth + 1, start_idx, end_idx, RIGHT);
@@ -571,6 +540,7 @@ protected:
         mean_idx += start_idx;
 
         NODE_T& pivot_node = arr_item_[arr_idx_[mean_idx]];
+        // TODO: GetSearchDirection
         DIRECTION_T direction = GetSearchDirection(pivot_node, rect, depth);
 
         if ((direction == BOTH or direction == LEFT) and mean_idx > start_idx) {
@@ -624,6 +594,7 @@ protected:
         mean_idx += start_idx;
 
         NODE_T& pivot_node = arr_item_[arr_idx_[mean_idx]];
+        // TODO: GetSearchDirection 
         DIRECTION_T direction = GetSearchDirection(pivot_node, rect, depth);
 
         if (heap_table.heap_size() < k) {
@@ -669,25 +640,30 @@ protected:
         }
     }
 
-    void QueryInRectangle(MBR_T& rect, size_t depth, IDX_T start_idx, IDX_T end_idx, LIST_IDX& idx_lst) {
-        depth = depth % mbr_dimension;
-        if (start_idx + 1 >= end_idx) {
-            NODE_T& cur_node = arr_item_[arr_idx_[start_idx]];
-            if (IsRectIntersect(cur_node, rect)) {
-                idx_lst.push_back(arr_idx_[start_idx]);
-            }
-            return;
-        }
+    // rect should be point
+    void QueryInRectangle(NODE_T& rect, size_t depth, IDX_T start_idx, IDX_T end_idx, LIST_IDX& idx_lst) {
+        size_t axis = depth % dimension;
 
         IDX_T node_cnt = end_idx - start_idx;
-        IDX_T mean_idx = node_cnt >> 1;
-        mean_idx += start_idx;
+        IDX_T mean_idx = start_idx + (node_cnt >> 1);
 
         NODE_T& pivot_node = arr_item_[arr_idx_[mean_idx]];
-        DIRECTION_T direction = GetSearchDirection(pivot_node, rect, depth);
+        DIRECTION_T direction(BOTH);
+
+        _Tp cur_val = pivot_node[axis];
+        _Tp dst_val = rect[axis];
+        if (axis < aux_dimension) {
+            if (cur_val > dst_val) {
+                direction = LEFT;
+            }
+        } else {
+            if (cur_val < dst_val) {
+                direction = RIGHT;
+            }
+        }
 
         if (direction == BOTH) {
-            if (IsRectIntersect(pivot_node, rect)) {
+            if (PointInMbr(rect, pivot_node)) {
                 idx_lst.push_back(arr_idx_[mean_idx]);
                 // donot return, continue search sub tree
             }
@@ -699,6 +675,42 @@ protected:
 
         if ((direction == BOTH or direction == RIGHT) and end_idx > mean_idx + 1) {
             QueryInRectangle(rect, depth + 1, mean_idx+1, end_idx, idx_lst);
+        }
+    }
+
+    void QueryByRectangle(MBR_T& rect, size_t depth, IDX_T start_idx, IDX_T end_idx, LIST_IDX& idx_lst) {
+        size_t axis = depth % dimension;
+
+        IDX_T node_cnt = end_idx - start_idx;
+        IDX_T mean_idx = start_idx + (node_cnt >> 1);
+
+        NODE_T& pivot_node = arr_item_[arr_idx_[mean_idx]];
+        DIRECTION_T direction(BOTH);
+
+        _Tp pivot_val = pivot_node[axis];
+        _Tp min_val = rect[axis];
+        _Tp max_val = rect[axis + dimension];
+        if (pivot_val < min_val) {
+            direction = RIGHT;
+        }
+
+        if (pivot_val > max_val) {
+            direction = LEFT;
+        }
+
+        if (direction == BOTH) {
+            if (PointInMbr(pivot_node, rect)) {
+                idx_lst.push_back(arr_idx_[mean_idx]);
+                // donot return, continue search sub tree
+            }
+        }
+
+        if ((direction == BOTH or direction == LEFT) and mean_idx > start_idx) {
+            QueryByRectangle(rect, depth + 1, start_idx, mean_idx, idx_lst);
+        }
+
+        if ((direction == BOTH or direction == RIGHT) and end_idx > mean_idx + 1) {
+            QueryByRectangle(rect, depth + 1, mean_idx+1, end_idx, idx_lst);
         }
     }
 private:
